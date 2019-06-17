@@ -13,7 +13,7 @@
 import argparse
 import logging
 from datetime import datetime
-import mimetypes
+import magic
 import errno
 import os
 import time
@@ -283,29 +283,6 @@ class StdoutBytesWriter(object):
         :param b: data to write
         """
         bytes_print(b, self._stdout)
-
-
-def guess_content_type(filename):
-    """Given a filename, guess it's content type.
-
-    If the type cannot be guessed, a value of None is returned.
-    """
-    try:
-        return mimetypes.guess_type(filename)[0]
-    # This catches a bug in the mimetype libary where some MIME types
-    # specifically on windows machines cause a UnicodeDecodeError
-    # because the MIME type in the Windows registery has an encoding
-    # that cannot be properly encoded using the default system encoding.
-    # https://bugs.python.org/issue9291
-    #
-    # So instead of hard failing, just log the issue and fall back to the
-    # default guessed content type of None.
-    except UnicodeDecodeError:
-        LOGGER.debug(
-            'Unable to guess content type for %s due to '
-            'UnicodeDecodeError: ', filename, exc_info=True
-        )
-
 
 def relative_path(filename, start=os.path.curdir):
     """Cross platform relative path of a filename.
@@ -669,14 +646,14 @@ class DeleteSourceFileSubscriber(DeleteSourceSubscriber):
     def _delete_source(self, future):
         os.remove(future.meta.call_args.fileobj)
 
-
 class BaseProvideContentTypeSubscriber(BaseSubscriber):
     """A subscriber that provides content type when creating s3 objects"""
 
     def on_queued(self, future, **kwargs):
-        guessed_type = guess_content_type(self._get_filename(future))
-        if guessed_type is not None:
-            future.meta.call_args.extra_args['ContentType'] = guessed_type
+        mime_magic = magic.Magic(mime=True, mime_encoding=True)
+        content_type = mime_magic.from_file(self._get_filename(future))
+        if content_type is not None:
+            future.meta.call_args.extra_args['ContentType'] = content_type
 
     def _get_filename(self, future):
         raise NotImplementedError('_get_filename()')
